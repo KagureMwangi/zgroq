@@ -19,7 +19,7 @@ def get_recipe():
         data = request.get_json()
         print("Incoming Lovable payload:", data)
 
-        user_input = data.get("message", "")
+        user_input = data.get("user_input", "")
         if not user_input:
             return jsonify({"error": "No message received"}), 400
 
