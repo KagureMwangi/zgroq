@@ -1,66 +1,69 @@
-import os
-import json
-import requests
 from flask import Flask, request, jsonify
-from dotenv import load_dotenv
 from flask_cors import CORS
-
-load_dotenv()
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+import requests
+import os
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS globally
+CORS(app)
 
-@app.route('/webhook', methods=['POST', 'OPTIONS'])
+# Set your Groq API key securely (use environment variables in production!)
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
+@app.route("/")
+def home():
+    return "Groq-powered webhook is running!"
+
+@app.route("/webhook", methods=["POST"])
 def get_recipe():
-    if request.method == 'OPTIONS':
-        return '', 200
+    try:
+        data = request.get_json()
+        print("Incoming Lovable payload:", data)
 
-    # Safely get and check input
-    data = request.get_json(force=True, silent=True) or {}
-    user_input = data.get("user_input", "").strip()
+        user_input = data.get("message", "")
+        if not user_input:
+            return jsonify({"error": "No message received"}), 400
 
-    if not user_input:
-        return jsonify({"error": "No user_input provided"}), 400
-
-    # Send request to Groq
-    groq_response = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "llama3-70b-8192",
+        payload = {
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a smart recipe assistant. Suggest recipes based on ingredients and dietary restrictions. If the user gives a dish name, return the full recipe, ingredients, and estimate cost for missing items."
+                    "content": "You're a helpful recipe assistant."
                 },
                 {
                     "role": "user",
                     "content": user_input
                 }
-            ]
+            ],
+            "model": "mixtral-8x7b-32768",  # or another available Groq model
+            "temperature": 0.7
         }
-    )
 
-    # Handle Groq API errors
-    if groq_response.status_code != 200:
-        return jsonify({
-            "error": "Groq API request failed",
-            "status": groq_response.status_code,
-            "details": groq_response.text
-        }), 500
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
-    try:
-        groq_data = groq_response.json()
-        reply = groq_data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers)
+
+        # Debug the raw Groq response
+        print("Groq response status:", response.status_code)
+        print("Groq response JSON:", response.text)
+
+        if response.status_code != 200:
+            return jsonify({"error": "Groq API failed", "details": response.text}), 500
+
+        try:
+            groq_data = response.json()
+            reply = groq_data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, no content.")
+        except Exception as e:
+            print("Error parsing Groq response:", e)
+            return jsonify({"error": "Invalid response from Groq", "details": response.text}), 500
+
+        return jsonify({"reply": reply})
+
     except Exception as e:
-        return jsonify({"error": "Failed to parse Groq response", "details": str(e)}), 500
+        print("Unhandled server error:", e)
+        return jsonify({"error": "Internal server error"}), 500
 
-    return jsonify({"reply": reply})
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+if __name__ == "__main__":
+    app.run(debug=True)
