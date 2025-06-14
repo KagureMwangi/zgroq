@@ -3,25 +3,29 @@ import json
 import requests
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from flask_cors import CORS  # <-- import flask_cors
+from flask_cors import CORS
 
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 app = Flask(__name__)
-CORS(app)  # <-- enable CORS globally
+CORS(app)  # Enable CORS globally
 
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
 def get_recipe():
     if request.method == 'OPTIONS':
-        # flask-cors handles this automatically but just in case
         return '', 200
 
-    data = request.get_json()
-    user_input = data.get("user_input", "")
+    # Safely get and check input
+    data = request.get_json(force=True, silent=True) or {}
+    user_input = data.get("user_input", "").strip()
 
-    response = requests.post(
+    if not user_input:
+        return jsonify({"error": "No user_input provided"}), 400
+
+    # Send request to Groq
+    groq_response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
             "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -42,7 +46,20 @@ def get_recipe():
         }
     )
 
-    reply = response.json()["choices"][0]["message"]["content"]
+    # Handle Groq API errors
+    if groq_response.status_code != 200:
+        return jsonify({
+            "error": "Groq API request failed",
+            "status": groq_response.status_code,
+            "details": groq_response.text
+        }), 500
+
+    try:
+        groq_data = groq_response.json()
+        reply = groq_data.get("choices", [{}])[0].get("message", {}).get("content", "Sorry, I couldn't generate a response.")
+    except Exception as e:
+        return jsonify({"error": "Failed to parse Groq response", "details": str(e)}), 500
+
     return jsonify({"reply": reply})
 
 if __name__ == '__main__':
