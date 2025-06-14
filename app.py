@@ -37,7 +37,7 @@ def get_recipe():
                     "content": user_input
                 }
             ],
-            "model": "mixtral-8x7b-32768",  # or another available Groq model
+            "model": "mixtral-8x7b",  # or another available Groq model
             "temperature": 0.7
         }
 
